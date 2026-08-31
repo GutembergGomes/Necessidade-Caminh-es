@@ -33,8 +33,34 @@
     }
 
     button,
-    input {
+    input,
+    select {
       font: inherit;
+    }
+
+    .plant-picker {
+      display: grid;
+      gap: 5px;
+      min-width: min(280px, 100%);
+    }
+
+    .plant-picker label {
+      color: var(--muted);
+      font-size: .72rem;
+      font-weight: 900;
+      letter-spacing: .04em;
+      text-transform: uppercase;
+    }
+
+    .plant-select {
+      width: 100%;
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      background: #e9f7ee;
+      color: #06200f;
+      font-weight: 900;
+      padding: 9px 34px 9px 11px;
+      cursor: pointer;
     }
 
     .app {
@@ -312,10 +338,14 @@
   <main class="app">
     <section class="hero">
       <div>
-        <h1>Necessidade CM</h1>
-        <p class="muted">Sistema separado para calcular, salvar e enviar a necessidade de caminhões.</p>
+        <h1 id="pageTitle">Necessidade CM</h1>
+        <p class="muted">Sistema por unidade para calcular, salvar e enviar a necessidade de caminhões.</p>
       </div>
       <div class="actions">
+        <div class="plant-picker">
+          <label for="plantSelect">Unidade selecionada</label>
+          <select class="plant-select" id="plantSelect"></select>
+        </div>
         <span class="status warn" id="syncStatus">Carregando...</span>
         <button class="btn" id="addFrontBtn" type="button">Adicionar frente</button>
         <button class="btn primary" id="saveDbBtn" type="button">Salvar no banco</button>
@@ -360,28 +390,43 @@
   <script src="https://www.gstatic.com/firebasejs/10.12.5/firebase-app-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/10.12.5/firebase-firestore-compat.js"></script>
   <script>
-    const STORAGE_KEY = "cambui.need.cm.standalone.v1";
-    const META_KEY = "cambui.need.cm.standalone.updatedAt.v1";
-    const PLANT = "cambui";
-    const APP_VERSION = "necessidade-cm-standalone-v1";
+    const PLANTS = {
+      cambui: "Usina Cambuí",
+      floresta: "Usina Floresta",
+      panorama: "Usina Panorama",
+      vale_do_verdao: "Usina Vale do Verdão"
+    };
+    const LOCAL_DATA_NAMESPACE = "necessidade-de-caminhoes.v2";
+    const ACTIVE_PLANT_KEY = `${LOCAL_DATA_NAMESPACE}.activePlant`;
+    let activePlant = localStorage.getItem(ACTIVE_PLANT_KEY) || "cambui";
+    if (!PLANTS[activePlant]) activePlant = "cambui";
+    const APP_VERSION = "necessidade-cm-standalone-v2";
+
+    function storageKey(plant = activePlant) {
+      return `${LOCAL_DATA_NAMESPACE}.${plant}.state`;
+    }
+
+    function metaKey(plant = activePlant) {
+      return `${LOCAL_DATA_NAMESPACE}.${plant}.updatedAt`;
+    }
+
+    function plantName(plant = activePlant) {
+      return PLANTS[plant] || PLANTS.cambui;
+    }
 
     const defaultFirebaseConfig = {
-      apiKey: "AIzaSyAzbjjyK3eKjR1ssmx22NcXOTUt1p-i4AU",
-      authDomain: "procucaodiaria.firebaseapp.com",
-      projectId: "procucaodiaria",
-      storageBucket: "procucaodiaria.firebasestorage.app",
-      messagingSenderId: "1006880934330",
-      appId: "1:1006880934330:web:d29a62169efc837da5f583",
-      measurementId: "G-DPJQV0SV4W"
+      apiKey: "AIzaSyDcu2jgzo4V5nvpDQwGdGOWY0nsSwCv7x8",
+      authDomain: "necessidade-de-caminhoes.firebaseapp.com",
+      projectId: "necessidade-de-caminhoes",
+      storageBucket: "necessidade-de-caminhoes.firebasestorage.app",
+      messagingSenderId: "840541069370",
+      appId: "1:840541069370:web:47c3797a226cd115dad503",
+      measurementId: "G-WE6JXSGWXV"
     };
 
     const defaultState = {
       fronts: [
-        { front: "Frente 4001", plan: 2800, radius: 18, netWeight: 65, emptySpeed: 19.636363636363637, loadedSpeed: 18, emptyCycle: 55, t2: 30, t4: 45, loadedCycle: 60, currentRadius: 29, fieldRoundTrips: 0 },
-        { front: "Frente 4002", plan: 2200, radius: 38, netWeight: 59, emptySpeed: 27.804878048780488, loadedSpeed: 24, emptyCycle: 82, t2: 30, t4: 45, loadedCycle: 95, currentRadius: 45, fieldRoundTrips: 0 },
-        { front: "Frente 4003", plan: 1000, radius: 35, netWeight: 60, emptySpeed: 26.25, loadedSpeed: 23.333333333333332, emptyCycle: 80, t2: 30, t4: 45, loadedCycle: 90, currentRadius: 21, fieldRoundTrips: 0 },
-        { front: "Frente 4007", plan: 3750, radius: 46, netWeight: 77, emptySpeed: 25.09090909090909, loadedSpeed: 21.230769230769234, emptyCycle: 110, t2: 30, t4: 45, loadedCycle: 130, currentRadius: 44, fieldRoundTrips: 0 },
-        { front: "Frente 4009", plan: 2250, radius: 45, netWeight: 73, emptySpeed: 22.5, loadedSpeed: 18.620689655172413, emptyCycle: 120, t2: 30, t4: 45, loadedCycle: 145, currentRadius: 46, fieldRoundTrips: 0 }
+        { front: "Frente 1", plan: 0, radius: 0, netWeight: 0, emptySpeed: 0, loadedSpeed: 0, emptyCycle: 0, t2: 30, t4: 45, loadedCycle: 0, currentRadius: 0, fieldRoundTrips: 0 }
       ],
       params: {
         emptySpeed: 35,
@@ -400,11 +445,13 @@
 
     const els = {
       kpiWrap: document.querySelector("#kpiWrap"),
+      pageTitle: document.querySelector("#pageTitle"),
       scenarioWrap: document.querySelector("#scenarioWrap"),
       paramsWrap: document.querySelector("#paramsWrap"),
       summaryWrap: document.querySelector("#summaryWrap"),
       syncStatus: document.querySelector("#syncStatus"),
       toast: document.querySelector("#toast"),
+      plantSelect: document.querySelector("#plantSelect"),
       addFrontBtn: document.querySelector("#addFrontBtn"),
       saveDbBtn: document.querySelector("#saveDbBtn"),
       refreshDbBtn: document.querySelector("#refreshDbBtn"),
@@ -414,8 +461,13 @@
     };
 
     let state = loadState();
-    let localUpdatedAt = localStorage.getItem(META_KEY) || "";
+    let localUpdatedAt = localStorage.getItem(metaKey()) || "";
     let db = null;
+
+    els.plantSelect.innerHTML = Object.entries(PLANTS)
+      .map(([value, label]) => `<option value="${escapeHtml(value)}">${escapeHtml(label)}</option>`)
+      .join("");
+    els.plantSelect.value = activePlant;
 
     function parseNumber(value) {
       if (typeof value === "number") return Number.isFinite(value) ? value : 0;
@@ -507,7 +559,7 @@
 
     function loadState() {
       try {
-        const raw = localStorage.getItem(STORAGE_KEY);
+        const raw = localStorage.getItem(storageKey());
         return raw ? cloneState(JSON.parse(raw)) : cloneState(defaultState);
       } catch {
         return cloneState(defaultState);
@@ -516,8 +568,8 @@
 
     function persistState(updatedAt = new Date().toISOString()) {
       state = cloneState(state);
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
-      localStorage.setItem(META_KEY, updatedAt);
+      localStorage.setItem(storageKey(), JSON.stringify(state));
+      localStorage.setItem(metaKey(), updatedAt);
       localUpdatedAt = updatedAt;
     }
 
@@ -648,6 +700,8 @@
 
     function render() {
       const data = calculate();
+      els.pageTitle.textContent = `Necessidade CM — ${plantName()}`;
+      document.title = `Necessidade CM — ${plantName()}`;
       els.kpiWrap.innerHTML = kpiHtml(data);
       els.scenarioWrap.innerHTML = `
         <table class="sheet-table">
@@ -820,6 +874,7 @@
 
       return [
         "*Resumo Necessidade CM*",
+        `Unidade: ${plantName()}`,
         `Data: ${formatDate(new Date())}`,
         "",
         `Necessidade bruta: ${formatNumberFixed(data.grossRequiredFleets, 2)} caminhões`,
@@ -880,7 +935,7 @@
                 <p class="muted">Resumo para impressão e envio no WhatsApp</p>
               </div>
               <div class="meta">
-                <span>Usina Cambuí</span>
+                <span>${escapeHtml(plantName())}</span>
                 <span>Gerado em ${escapeHtml(generatedAt)}</span>
               </div>
             </header>
@@ -1016,7 +1071,7 @@
     }
 
     function rootRef() {
-      return db.collection("productionApps").doc(PLANT);
+      return db.collection("productionApps").doc(activePlant);
     }
 
     async function saveToDatabase() {
@@ -1026,7 +1081,7 @@
       setStatus("Salvando...", "warn");
       try {
         await rootRef().set({
-          plant: PLANT,
+          plant: activePlant,
           version: APP_VERSION,
           updatedAt: now,
           needCmUpdatedAt: now,
@@ -1048,9 +1103,9 @@
       try {
         const snapshot = await rootRef().get();
         const data = snapshot.exists ? snapshot.data() || {} : {};
-        if (!data.needCmState) {
+        if (!data.needCmState || data.version !== APP_VERSION) {
           setStatus("Sem dados no banco", "warn");
-          showToast("Nenhuma Necessidade CM encontrada no banco.");
+          showToast(`Nenhum dado novo encontrado para ${plantName()}.`);
           return;
         }
         state = cloneState(data.needCmState);
@@ -1062,6 +1117,17 @@
         setStatus("Falha ao atualizar", "bad");
         showToast(`Não foi possível atualizar do banco: ${error.message || error}`);
       }
+    }
+
+    function changePlant(plant) {
+      if (!PLANTS[plant] || plant === activePlant) return;
+      activePlant = plant;
+      localStorage.setItem(ACTIVE_PLANT_KEY, activePlant);
+      state = loadState();
+      localUpdatedAt = localStorage.getItem(metaKey()) || "";
+      render();
+      setStatus(localUpdatedAt ? `Local ${formatDateTime(localUpdatedAt)}` : "Sem dados locais", localUpdatedAt ? "good" : "warn");
+      showToast(`${plantName()} selecionada. Os dados desta unidade estão separados.`);
     }
 
     [els.scenarioWrap, els.paramsWrap].forEach((wrap) => {
@@ -1088,6 +1154,7 @@
     });
 
     els.addFrontBtn.addEventListener("click", addFront);
+    els.plantSelect.addEventListener("change", (event) => changePlant(event.target.value));
     els.saveDbBtn.addEventListener("click", saveToDatabase);
     els.refreshDbBtn.addEventListener("click", loadFromDatabase);
     els.printReportBtn.addEventListener("click", printReport);

@@ -117,6 +117,40 @@
       justify-content: flex-end;
     }
 
+    .module-nav {
+      display: flex;
+      gap: 8px;
+      padding: 8px;
+      border: 1px solid var(--line);
+      border-radius: 14px;
+      background: rgba(13, 25, 18, .92);
+      box-shadow: var(--shadow);
+    }
+
+    .module-tab {
+      flex: 1;
+      border: 1px solid transparent;
+      border-radius: 10px;
+      padding: 11px 14px;
+      background: transparent;
+      color: var(--muted);
+      font-weight: 900;
+      cursor: pointer;
+    }
+
+    .module-tab.active {
+      color: #fff;
+      background: linear-gradient(135deg, #27713d, #1d5830);
+      border-color: rgba(112, 207, 130, .55);
+    }
+
+    .module-page {
+      display: grid;
+      gap: 14px;
+    }
+
+    [hidden] { display: none !important; }
+
     .btn {
       border: 1px solid rgba(255, 255, 255, .18);
       border-radius: 10px;
@@ -340,7 +374,7 @@
     <section class="hero">
       <div>
         <h1 id="pageTitle">Necessidade CM</h1>
-        <p class="muted">Sistema por unidade para calcular, salvar e enviar a necessidade de caminhões.</p>
+        <p class="muted" id="pageSubtitle">Sistema por unidade para calcular, salvar e enviar a necessidade de caminhões.</p>
       </div>
       <div class="actions">
         <div class="plant-picker">
@@ -357,33 +391,58 @@
       </div>
     </section>
 
-    <section class="stats-grid" id="kpiWrap" aria-label="Indicadores principais"></section>
+    <nav class="module-nav" aria-label="Cenários do sistema">
+      <button class="module-tab active" type="button" data-module="transport">Cenário de Transporte</button>
+      <button class="module-tab" type="button" data-module="harvest">Cenário de Colheita</button>
+    </nav>
 
-    <section class="panel">
-      <div class="panel-head">
-        <h2>Cenário Geral</h2>
-        <span class="status">Preenchimento manual</span>
-      </div>
-      <div class="table-wrap" id="scenarioWrap"></div>
-    </section>
+    <div class="module-page" id="transportPage">
+      <section class="stats-grid" id="kpiWrap" aria-label="Indicadores principais"></section>
 
-    <section class="dashboard-grid">
       <section class="panel">
         <div class="panel-head">
-          <h2>Parâmetros</h2>
+          <h2>Cenário Geral</h2>
+          <span class="status">Preenchimento manual</span>
+        </div>
+        <div class="table-wrap" id="scenarioWrap"></div>
+      </section>
+
+      <section class="dashboard-grid">
+        <section class="panel">
+          <div class="panel-head">
+            <h2>Parâmetros</h2>
+            <span class="status">Cálculo automático</span>
+          </div>
+          <div class="table-wrap" id="paramsWrap"></div>
+        </section>
+
+        <section class="panel">
+          <div class="panel-head">
+            <h2>Resumo</h2>
+            <span class="status">Para operação</span>
+          </div>
+          <div id="summaryWrap"></div>
+        </section>
+      </section>
+    </div>
+
+    <div class="module-page" id="harvestPage" hidden>
+      <section class="stats-grid" id="harvestKpiWrap" aria-label="Indicadores de colheita"></section>
+      <section class="panel">
+        <div class="panel-head">
+          <h2>Frentes de colheita</h2>
+          <span class="status">Baseado na planilha de cenário</span>
+        </div>
+        <div class="table-wrap" id="harvestScenarioWrap"></div>
+      </section>
+      <section class="panel">
+        <div class="panel-head">
+          <h2>Resumo da colheita</h2>
           <span class="status">Cálculo automático</span>
         </div>
-        <div class="table-wrap" id="paramsWrap"></div>
+        <div id="harvestSummaryWrap"></div>
       </section>
-
-      <section class="panel">
-        <div class="panel-head">
-          <h2>Resumo</h2>
-          <span class="status">Para operação</span>
-        </div>
-        <div id="summaryWrap"></div>
-      </section>
-    </section>
+    </div>
   </main>
 
   <div class="toast" id="toast"></div>
@@ -403,8 +462,11 @@
     };
     const LOCAL_DATA_NAMESPACE = "necessidade-de-caminhoes.v2";
     const ACTIVE_PLANT_KEY = `${LOCAL_DATA_NAMESPACE}.activePlant`;
+    const ACTIVE_MODULE_KEY = `${LOCAL_DATA_NAMESPACE}.activeModule`;
     let activePlant = localStorage.getItem(ACTIVE_PLANT_KEY) || "cambui";
     if (!PLANTS[activePlant]) activePlant = "cambui";
+    let activeModule = localStorage.getItem(ACTIVE_MODULE_KEY) || "transport";
+    if (!['transport', 'harvest'].includes(activeModule)) activeModule = "transport";
     const APP_VERSION = "necessidade-cm-standalone-v2";
 
     function storageKey(plant = activePlant) {
@@ -413,6 +475,14 @@
 
     function metaKey(plant = activePlant) {
       return `${LOCAL_DATA_NAMESPACE}.${plant}.updatedAt`;
+    }
+
+    function harvestStorageKey(plant = activePlant) {
+      return `${LOCAL_DATA_NAMESPACE}.${plant}.harvestState`;
+    }
+
+    function harvestMetaKey(plant = activePlant) {
+      return `${LOCAL_DATA_NAMESPACE}.${plant}.harvestUpdatedAt`;
     }
 
     function plantName(plant = activePlant) {
@@ -449,12 +519,30 @@
       }
     };
 
+    const defaultHarvestState = {
+      fronts: [
+        {
+          front: "Frente 1", tch: 0, spacing: 1.5, shotLength: 0, harvestSpeed: 0,
+          availableHours: 15, maneuverTime: 1.5, harvesters: 0, tractors: 0,
+          tractorDensity: 0, loadingTime: 0, auxiliaryTime: 0, loadDensity: 0
+        }
+      ],
+      lossPercent: 10
+    };
+
     const els = {
       kpiWrap: document.querySelector("#kpiWrap"),
+      harvestKpiWrap: document.querySelector("#harvestKpiWrap"),
       pageTitle: document.querySelector("#pageTitle"),
+      pageSubtitle: document.querySelector("#pageSubtitle"),
+      transportPage: document.querySelector("#transportPage"),
+      harvestPage: document.querySelector("#harvestPage"),
+      moduleTabs: Array.from(document.querySelectorAll("[data-module]")),
       scenarioWrap: document.querySelector("#scenarioWrap"),
+      harvestScenarioWrap: document.querySelector("#harvestScenarioWrap"),
       paramsWrap: document.querySelector("#paramsWrap"),
       summaryWrap: document.querySelector("#summaryWrap"),
+      harvestSummaryWrap: document.querySelector("#harvestSummaryWrap"),
       syncStatus: document.querySelector("#syncStatus"),
       toast: document.querySelector("#toast"),
       plantSelect: document.querySelector("#plantSelect"),
@@ -468,6 +556,8 @@
 
     let state = loadState();
     let localUpdatedAt = localStorage.getItem(metaKey()) || "";
+    let harvestState = loadHarvestState();
+    let harvestLocalUpdatedAt = localStorage.getItem(harvestMetaKey()) || "";
     let db = null;
 
     els.plantSelect.innerHTML = Object.entries(PLANTS)
@@ -577,6 +667,91 @@
       localStorage.setItem(storageKey(), JSON.stringify(state));
       localStorage.setItem(metaKey(), updatedAt);
       localUpdatedAt = updatedAt;
+    }
+
+    function cloneHarvestState(source = defaultHarvestState) {
+      return {
+        fronts: (source.fronts || []).map((row, index) => ({
+          front: String(row.front || `Frente ${index + 1}`).trim(),
+          tch: parseNumber(row.tch),
+          spacing: parseNumber(row.spacing),
+          shotLength: parseNumber(row.shotLength),
+          harvestSpeed: parseNumber(row.harvestSpeed),
+          availableHours: parseNumber(row.availableHours),
+          maneuverTime: parseNumber(row.maneuverTime),
+          harvesters: parseNumber(row.harvesters),
+          tractors: parseNumber(row.tractors),
+          tractorDensity: parseNumber(row.tractorDensity),
+          loadingTime: parseNumber(row.loadingTime),
+          auxiliaryTime: parseNumber(row.auxiliaryTime),
+          loadDensity: parseNumber(row.loadDensity)
+        })),
+        lossPercent: parseNumber(source.lossPercent ?? defaultHarvestState.lossPercent)
+      };
+    }
+
+    function loadHarvestState() {
+      try {
+        const raw = localStorage.getItem(harvestStorageKey());
+        return raw ? cloneHarvestState(JSON.parse(raw)) : cloneHarvestState(defaultHarvestState);
+      } catch {
+        return cloneHarvestState(defaultHarvestState);
+      }
+    }
+
+    function persistHarvestState(updatedAt = new Date().toISOString()) {
+      harvestState = cloneHarvestState(harvestState);
+      localStorage.setItem(harvestStorageKey(), JSON.stringify(harvestState));
+      localStorage.setItem(harvestMetaKey(), updatedAt);
+      harvestLocalUpdatedAt = updatedAt;
+    }
+
+    function calculateHarvest(source = harvestState) {
+      const clean = cloneHarvestState(source);
+      const fronts = clean.fronts.map((row) => {
+        const linearMeters = row.spacing ? 10000 / row.spacing : 0;
+        const tonsPerMeter = linearMeters ? row.tch / linearMeters : 0;
+        const shotTime = row.harvestSpeed ? row.shotLength * 60 / (row.harvestSpeed * 1000) : 0;
+        const cycleTime = shotTime + row.maneuverTime;
+        const shotsPerHour = cycleTime ? 60 / cycleTime : 0;
+        const metersPerHour = shotsPerHour * row.shotLength;
+        const machineProductionHour = metersPerHour * tonsPerMeter;
+        const productionPerMachineDay = machineProductionHour * row.availableHours;
+        const agronomicFrontProductionDay = productionPerMachineDay * row.harvesters;
+        const harvesterProductionHour = row.loadingTime
+          ? 60 / row.loadingTime * row.tractorDensity * row.harvesters
+          : 0;
+        const tractorCycle = row.loadingTime + row.auxiliaryTime;
+        const tractorProductionHour = tractorCycle
+          ? 60 / tractorCycle * row.tractorDensity * row.tractors
+          : 0;
+        const frontProductionHour = Math.min(harvesterProductionHour, tractorProductionHour);
+        const trucksPerHour = row.loadDensity ? frontProductionHour / row.loadDensity : 0;
+        const allocationInterval = trucksPerHour ? 60 / trucksPerHour : 0;
+        const operationalFrontProductionDay = frontProductionHour * row.availableHours;
+        const bottleneck = harvesterProductionHour <= tractorProductionHour ? "Colhedoras" : "Transbordos";
+        return {
+          ...row, linearMeters, tonsPerMeter, shotTime, cycleTime, shotsPerHour,
+          metersPerHour, machineProductionHour, productionPerMachineDay,
+          agronomicFrontProductionDay, harvesterProductionHour, tractorProductionHour,
+          frontProductionHour, trucksPerHour, allocationInterval,
+          operationalFrontProductionDay, bottleneck
+        };
+      });
+      const grossProductionHour = fronts.reduce((sum, row) => sum + row.frontProductionHour, 0);
+      const lossRate = Math.max(0, clean.lossPercent) / 100;
+      const lossHour = grossProductionHour * lossRate;
+      const netProductionHour = grossProductionHour - lossHour;
+      const operationalProductionDay = fronts.reduce((sum, row) => sum + row.operationalFrontProductionDay, 0);
+      const agronomicProductionDay = fronts.reduce((sum, row) => sum + row.agronomicFrontProductionDay, 0);
+      const trucksPerHour = fronts.reduce((sum, row) => sum + row.trucksPerHour, 0);
+      const harvesters = fronts.reduce((sum, row) => sum + row.harvesters, 0);
+      const tractors = fronts.reduce((sum, row) => sum + row.tractors, 0);
+      return {
+        ...clean, fronts, grossProductionHour, lossHour, netProductionHour,
+        operationalProductionDay, agronomicProductionDay, trucksPerHour,
+        harvesters, tractors
+      };
     }
 
     function calculate(source = state) {
@@ -704,10 +879,132 @@
       `;
     }
 
+    function harvestInput(value, field, index, digits = 2) {
+      return `<input class="sheet-input" type="text" inputmode="decimal" value="${escapeHtml(formatNumberFixed(value, digits))}" data-harvest-row="${index}" data-harvest-field="${escapeHtml(field)}">`;
+    }
+
+    function harvestText(value, index) {
+      return `<input class="sheet-input front-input" type="text" value="${escapeHtml(value)}" data-harvest-row="${index}" data-harvest-field="front">`;
+    }
+
+    function harvestKpiHtml(data) {
+      return [
+        ["Produção líquida", `${formatNumberFixed(data.netProductionHour, 2)} t/h`, `${formatNumberFixed(data.lossPercent, 0)}% de perda aplicada`],
+        ["Produção bruta", `${formatNumberFixed(data.grossProductionHour, 2)} t/h`, "Soma das frentes"],
+        ["Produção operacional", `${formatNumber(data.operationalProductionDay)} t/dia`, "Capacidade pelo gargalo"],
+        ["Capacidade agronômica", `${formatNumber(data.agronomicProductionDay)} t/dia`, "TCH, tiro, velocidade e manobra"],
+        ["Caminhões por hora", formatNumberFixed(data.trucksPerHour, 2), "Demanda total de alocação"],
+        ["Equipamentos ativos", `${formatNumber(data.harvesters)} / ${formatNumber(data.tractors)}`, "Colhedoras / transbordos"]
+      ].map((item) => `
+        <article class="stat">
+          <span>${escapeHtml(item[0])}</span>
+          <strong>${escapeHtml(item[1])}</strong>
+          <small>${escapeHtml(item[2])}</small>
+        </article>
+      `).join("");
+    }
+
+    function harvestSummaryHtml(data) {
+      const bottlenecks = data.fronts.filter((row) => row.frontProductionHour > 0)
+        .map((row) => `${row.front}: ${row.bottleneck}`).join("; ") || "Preencha as frentes para identificar os gargalos.";
+      return `
+        <div class="summary-grid">
+          <div class="summary-card">
+            <small>Perda operacional</small>
+            <strong>${formatNumberFixed(data.lossHour, 2)} t/h</strong>
+            <span>Percentual editável: <input class="sheet-input" style="width:90px" type="text" inputmode="decimal" value="${escapeHtml(formatNumberFixed(data.lossPercent, 0))}" data-harvest-param="lossPercent">%.</span>
+          </div>
+          <div class="summary-card">
+            <small>Produção líquida diária estimada</small>
+            <strong>${formatNumber(data.netProductionHour * 24)} t/dia</strong>
+            <span>Projeção de 24 horas a partir da produção líquida.</span>
+          </div>
+          <div class="summary-card">
+            <small>Gargalo por frente</small>
+            <strong>${data.fronts.filter((row) => row.frontProductionHour > 0).length} frentes calculadas</strong>
+            <span>${escapeHtml(bottlenecks)}</span>
+          </div>
+          <div class="summary-card">
+            <small>Atualização</small>
+            <strong>${harvestLocalUpdatedAt ? formatDateTime(harvestLocalUpdatedAt) : "Local"}</strong>
+            <span>Os dados de colheita são independentes por unidade.</span>
+          </div>
+        </div>
+      `;
+    }
+
+    function renderHarvest() {
+      const data = calculateHarvest();
+      els.harvestKpiWrap.innerHTML = harvestKpiHtml(data);
+      els.harvestScenarioWrap.innerHTML = `
+        <table class="sheet-table">
+          <thead><tr>
+            <th>Frente</th><th>TCH</th><th>Espaçamento</th><th>Tiro médio</th><th>Vel. colheita</th>
+            <th>Horas disponíveis</th><th>Tempo manobra</th><th>Colhedoras</th><th>Transbordos</th>
+            <th>Densidade transbordo</th><th>Tempo carregamento</th><th>Tempo auxiliar</th><th>Carga caminhão</th>
+            <th>Prod. colhedoras</th><th>Prod. transbordos</th><th>Prod. frente</th><th>Gargalo</th>
+            <th>Caminhões/h</th><th>Intervalo</th><th>Cap. agronômica/dia</th><th>Ação</th>
+          </tr></thead>
+          <tbody>
+            ${data.fronts.map((row, index) => `
+              <tr>
+                <td class="sheet-cell-label">${harvestText(row.front, index)}</td>
+                <td class="sheet-cell-input">${harvestInput(row.tch, "tch", index, 0)}</td>
+                <td class="sheet-cell-input">${harvestInput(row.spacing, "spacing", index, 2)}</td>
+                <td class="sheet-cell-input">${harvestInput(row.shotLength, "shotLength", index, 0)}</td>
+                <td class="sheet-cell-input">${harvestInput(row.harvestSpeed, "harvestSpeed", index, 1)}</td>
+                <td class="sheet-cell-input">${harvestInput(row.availableHours, "availableHours", index, 1)}</td>
+                <td class="sheet-cell-input">${harvestInput(row.maneuverTime, "maneuverTime", index, 1)}</td>
+                <td class="sheet-cell-input">${harvestInput(row.harvesters, "harvesters", index, 0)}</td>
+                <td class="sheet-cell-input">${harvestInput(row.tractors, "tractors", index, 0)}</td>
+                <td class="sheet-cell-input">${harvestInput(row.tractorDensity, "tractorDensity", index, 2)}</td>
+                <td class="sheet-cell-input">${harvestInput(row.loadingTime, "loadingTime", index, 1)}</td>
+                <td class="sheet-cell-input">${harvestInput(row.auxiliaryTime, "auxiliaryTime", index, 1)}</td>
+                <td class="sheet-cell-input">${harvestInput(row.loadDensity, "loadDensity", index, 2)}</td>
+                <td class="sheet-cell-formula">${formatNumberFixed(row.harvesterProductionHour, 2)} t/h</td>
+                <td class="sheet-cell-formula">${formatNumberFixed(row.tractorProductionHour, 2)} t/h</td>
+                <td class="sheet-cell-formula">${formatNumberFixed(row.frontProductionHour, 2)} t/h</td>
+                <td class="sheet-cell-total">${row.frontProductionHour ? escapeHtml(row.bottleneck) : "—"}</td>
+                <td class="sheet-cell-formula">${formatNumberFixed(row.trucksPerHour, 2)}</td>
+                <td class="sheet-cell-formula">${row.allocationInterval ? `${formatNumberFixed(row.allocationInterval, 1)} min` : "—"}</td>
+                <td class="sheet-cell-formula">${formatNumber(row.agronomicFrontProductionDay)} t/dia</td>
+                <td><button class="btn danger" type="button" data-harvest-delete="${index}">Excluir</button></td>
+              </tr>
+            `).join("")}
+            <tr>
+              <td class="sheet-cell-total" colspan="7">Totais</td>
+              <td class="sheet-cell-total">${formatNumber(data.harvesters)}</td>
+              <td class="sheet-cell-total">${formatNumber(data.tractors)}</td>
+              <td colspan="6"></td>
+              <td class="sheet-cell-total">${formatNumberFixed(data.grossProductionHour, 2)} t/h</td>
+              <td></td>
+              <td class="sheet-cell-total">${formatNumberFixed(data.trucksPerHour, 2)}</td>
+              <td></td>
+              <td class="sheet-cell-total">${formatNumber(data.agronomicProductionDay)} t/dia</td>
+              <td></td>
+            </tr>
+          </tbody>
+        </table>
+      `;
+      els.harvestSummaryWrap.innerHTML = harvestSummaryHtml(data);
+    }
+
+    function updatePageChrome() {
+      const isHarvest = activeModule === "harvest";
+      els.transportPage.hidden = isHarvest;
+      els.harvestPage.hidden = !isHarvest;
+      els.moduleTabs.forEach((tab) => tab.classList.toggle("active", tab.dataset.module === activeModule));
+      els.pageTitle.textContent = `${isHarvest ? "Cenário de Colheita" : "Necessidade CM"} — ${plantName()}`;
+      els.pageSubtitle.textContent = isHarvest
+        ? "Capacidade de colheita por frente, equipamentos, parâmetros agronômicos e demanda de caminhões."
+        : "Sistema por unidade para calcular, salvar e enviar a necessidade de caminhões.";
+      document.title = `${isHarvest ? "Cenário de Colheita" : "Necessidade CM"} — ${plantName()}`;
+      els.addFrontBtn.textContent = isHarvest ? "Adicionar frente de colheita" : "Adicionar frente";
+    }
+
     function render() {
       const data = calculate();
-      els.pageTitle.textContent = `Necessidade CM — ${plantName()}`;
-      document.title = `Necessidade CM — ${plantName()}`;
+      updatePageChrome();
       els.kpiWrap.innerHTML = kpiHtml(data);
       els.scenarioWrap.innerHTML = `
         <table class="sheet-table">
@@ -873,6 +1170,60 @@
       showToast("Frente excluída.");
     }
 
+    function updateHarvestValue(target) {
+      if (target.dataset.harvestRow !== undefined) {
+        const index = Number(target.dataset.harvestRow);
+        const field = target.dataset.harvestField;
+        if (!harvestState.fronts[index] || !field) return;
+        harvestState.fronts[index][field] = field === "front"
+          ? String(target.value || "").trim() || `Frente ${index + 1}`
+          : parseNumber(target.value);
+      } else if (target.dataset.harvestParam) {
+        harvestState[target.dataset.harvestParam] = parseNumber(target.value);
+      }
+    }
+
+    function addHarvestFront() {
+      harvestState.fronts.push({
+        front: `Frente ${harvestState.fronts.length + 1}`,
+        tch: 0, spacing: 1.5, shotLength: 0, harvestSpeed: 0,
+        availableHours: 15, maneuverTime: 1.5, harvesters: 0, tractors: 0,
+        tractorDensity: 0, loadingTime: 0, auxiliaryTime: 0, loadDensity: 0
+      });
+      persistHarvestState();
+      renderHarvest();
+      showToast("Frente de colheita adicionada.");
+    }
+
+    function deleteHarvestFront(index) {
+      if (!harvestState.fronts[index]) return;
+      harvestState.fronts.splice(index, 1);
+      persistHarvestState();
+      renderHarvest();
+      showToast("Frente de colheita excluída.");
+    }
+
+    function harvestWhatsAppText(data = calculateHarvest()) {
+      const frontLines = data.fronts.map((row) => (
+        `• ${row.front}: ${formatNumberFixed(row.frontProductionHour, 2)} t/h | ${formatNumber(row.operationalFrontProductionDay)} t/dia | ${formatNumberFixed(row.trucksPerHour, 2)} caminhões/h | gargalo: ${row.frontProductionHour ? row.bottleneck : "sem dados"}`
+      ));
+      return [
+        "*Resumo Cenário de Colheita*",
+        `Unidade: ${plantName()}`,
+        `Data: ${formatDate(new Date())}`,
+        "",
+        `Produção bruta: ${formatNumberFixed(data.grossProductionHour, 2)} t/h`,
+        `Perda operacional: ${formatNumberFixed(data.lossPercent, 0)}% = ${formatNumberFixed(data.lossHour, 2)} t/h`,
+        `Produção líquida: ${formatNumberFixed(data.netProductionHour, 2)} t/h`,
+        `Capacidade operacional: ${formatNumber(data.operationalProductionDay)} t/dia`,
+        `Capacidade agronômica: ${formatNumber(data.agronomicProductionDay)} t/dia`,
+        `Demanda: ${formatNumberFixed(data.trucksPerHour, 2)} caminhões/h`,
+        "",
+        "*Frentes*",
+        ...frontLines
+      ].join("\n");
+    }
+
     function whatsAppText(data = calculate()) {
       const frontLines = data.fronts.map((row) => (
         `• ${row.front}: plano ${formatNumber(row.plan)} t | raio ${formatNumberFixed(row.radius, 0)} km | ciclo ${formatNumber(row.cycleTotal)} min | bate-volta ${formatNumber(row.fieldRoundTrips)} | CM ${formatNumberFixed(row.frontRequiredFleets, 2)} (arred. ${Math.ceil(row.frontRequiredFleets)})`
@@ -1018,8 +1369,24 @@
         </html>`;
     }
 
+    function harvestReportHtml() {
+      const data = calculateHarvest();
+      return `<!doctype html><html lang="pt-BR"><head><meta charset="utf-8"><title>Relatório de Colheita</title>
+        <style>@page{size:A4 landscape;margin:10mm}*{box-sizing:border-box}body{font-family:Arial;color:#142217;font-size:10px;margin:0}h1,p{margin:0}header{display:flex;justify-content:space-between;border-bottom:3px solid #1f6f3a;padding-bottom:8px;margin-bottom:10px}.kpis{display:grid;grid-template-columns:repeat(4,1fr);gap:7px;margin-bottom:10px}.kpi{border:1px solid #cbd5c7;border-left:5px solid #1f6f3a;border-radius:8px;padding:8px}.kpi span{display:block;color:#64748b;font-weight:700}.kpi strong{font-size:16px}table{width:100%;border-collapse:collapse}th,td{border:1px solid #d7e0d5;padding:5px;text-align:right}th{background:#eaf3e8}th:first-child,td:first-child{text-align:left}</style>
+        </head><body><header><div><h1>Cenário de Colheita</h1><p>${escapeHtml(plantName())}</p></div><strong>${escapeHtml(formatDateTime(new Date()))}</strong></header>
+        <section class="kpis">
+          <div class="kpi"><span>Produção líquida</span><strong>${formatNumberFixed(data.netProductionHour, 2)} t/h</strong></div>
+          <div class="kpi"><span>Capacidade operacional</span><strong>${formatNumber(data.operationalProductionDay)} t/dia</strong></div>
+          <div class="kpi"><span>Capacidade agronômica</span><strong>${formatNumber(data.agronomicProductionDay)} t/dia</strong></div>
+          <div class="kpi"><span>Caminhões por hora</span><strong>${formatNumberFixed(data.trucksPerHour, 2)}</strong></div>
+        </section>
+        <table><thead><tr><th>Frente</th><th>TCH</th><th>Colhedoras</th><th>Transbordos</th><th>Prod. colhedoras</th><th>Prod. transbordos</th><th>Prod. frente</th><th>Gargalo</th><th>Caminhões/h</th><th>Intervalo</th><th>Cap. agronômica/dia</th></tr></thead>
+        <tbody>${data.fronts.map((row) => `<tr><td>${escapeHtml(row.front)}</td><td>${formatNumberFixed(row.tch, 1)}</td><td>${formatNumber(row.harvesters)}</td><td>${formatNumber(row.tractors)}</td><td>${formatNumberFixed(row.harvesterProductionHour, 2)}</td><td>${formatNumberFixed(row.tractorProductionHour, 2)}</td><td>${formatNumberFixed(row.frontProductionHour, 2)}</td><td>${row.frontProductionHour ? escapeHtml(row.bottleneck) : "—"}</td><td>${formatNumberFixed(row.trucksPerHour, 2)}</td><td>${row.allocationInterval ? `${formatNumberFixed(row.allocationInterval, 1)} min` : "—"}</td><td>${formatNumber(row.agronomicFrontProductionDay)}</td></tr>`).join("")}</tbody></table>
+        </body></html>`;
+    }
+
     function printReport() {
-      render();
+      activeModule === "harvest" ? renderHarvest() : render();
       const frame = document.createElement("iframe");
       frame.style.position = "fixed";
       frame.style.right = "0";
@@ -1037,7 +1404,7 @@
         return;
       }
       frameDocument.open();
-      frameDocument.write(reportHtml());
+      frameDocument.write(activeModule === "harvest" ? harvestReportHtml() : reportHtml());
       frameDocument.close();
       setTimeout(() => {
         frameWindow.focus();
@@ -1047,7 +1414,7 @@
     }
 
     async function copyWhatsApp() {
-      const text = whatsAppText();
+      const text = activeModule === "harvest" ? harvestWhatsAppText() : whatsAppText();
       try {
         await navigator.clipboard.writeText(text);
         showToast("Resumo copiado para enviar no WhatsApp.");
@@ -1082,6 +1449,7 @@
 
     async function saveToDatabase() {
       persistState();
+      persistHarvestState();
       if (!ensureFirebase()) return;
       const now = new Date().toISOString();
       setStatus("Salvando...", "warn");
@@ -1091,12 +1459,16 @@
           version: APP_VERSION,
           updatedAt: now,
           needCmUpdatedAt: now,
-          needCmState: cloneState(state)
+          needCmState: cloneState(state),
+          harvestUpdatedAt: now,
+          harvestState: cloneHarvestState(harvestState)
         });
         persistState(now);
+        persistHarvestState(now);
         setStatus(`Salvo ${formatDateTime(now)}`, "good");
         render();
-        showToast("Necessidade CM salva no banco.");
+        renderHarvest();
+        showToast(`${activeModule === "harvest" ? "Cenário de Colheita" : "Necessidade CM"} salvo no banco.`);
       } catch (error) {
         setStatus("Falha ao salvar", "bad");
         showToast(`Não foi possível salvar no banco: ${error.message || error}`);
@@ -1109,15 +1481,23 @@
       try {
         const snapshot = await rootRef().get();
         const data = snapshot.exists() ? snapshot.val() || {} : {};
-        if (!data.needCmState || data.version !== APP_VERSION) {
+        if (data.version !== APP_VERSION || (!data.needCmState && !data.harvestState)) {
           setStatus("Sem dados no banco", "warn");
           showToast(`Nenhum dado novo encontrado para ${plantName()}.`);
           return;
         }
-        state = cloneState(data.needCmState);
-        persistState(data.needCmUpdatedAt || data.updatedAt || new Date().toISOString());
+        if (data.needCmState) {
+          state = cloneState(data.needCmState);
+          persistState(data.needCmUpdatedAt || data.updatedAt || new Date().toISOString());
+        }
+        if (data.harvestState) {
+          harvestState = cloneHarvestState(data.harvestState);
+          persistHarvestState(data.harvestUpdatedAt || data.updatedAt || new Date().toISOString());
+        }
         render();
-        setStatus(`Atualizado ${formatDateTime(localUpdatedAt)}`, "good");
+        renderHarvest();
+        const currentUpdatedAt = activeModule === "harvest" ? harvestLocalUpdatedAt : localUpdatedAt;
+        setStatus(`Atualizado ${formatDateTime(currentUpdatedAt)}`, "good");
         showToast("Dados carregados do banco.");
       } catch (error) {
         setStatus("Falha ao atualizar", "bad");
@@ -1131,9 +1511,22 @@
       localStorage.setItem(ACTIVE_PLANT_KEY, activePlant);
       state = loadState();
       localUpdatedAt = localStorage.getItem(metaKey()) || "";
+      harvestState = loadHarvestState();
+      harvestLocalUpdatedAt = localStorage.getItem(harvestMetaKey()) || "";
       render();
-      setStatus(localUpdatedAt ? `Local ${formatDateTime(localUpdatedAt)}` : "Sem dados locais", localUpdatedAt ? "good" : "warn");
+      renderHarvest();
+      const currentUpdatedAt = activeModule === "harvest" ? harvestLocalUpdatedAt : localUpdatedAt;
+      setStatus(currentUpdatedAt ? `Local ${formatDateTime(currentUpdatedAt)}` : "Sem dados locais", currentUpdatedAt ? "good" : "warn");
       showToast(`${plantName()} selecionada. Os dados desta unidade estão separados.`);
+    }
+
+    function changeModule(module) {
+      if (!['transport', 'harvest'].includes(module) || module === activeModule) return;
+      activeModule = module;
+      localStorage.setItem(ACTIVE_MODULE_KEY, activeModule);
+      updatePageChrome();
+      const currentUpdatedAt = activeModule === "harvest" ? harvestLocalUpdatedAt : localUpdatedAt;
+      setStatus(currentUpdatedAt ? `Local ${formatDateTime(currentUpdatedAt)}` : "Banco pronto", "good");
     }
 
     [els.scenarioWrap, els.paramsWrap].forEach((wrap) => {
@@ -1159,23 +1552,55 @@
       deleteFront(Number(button.dataset.delete));
     });
 
-    els.addFrontBtn.addEventListener("click", addFront);
+    [els.harvestScenarioWrap, els.harvestSummaryWrap].forEach((wrap) => {
+      wrap.addEventListener("input", (event) => {
+        const input = event.target.closest("[data-harvest-field], [data-harvest-param]");
+        if (!input) return;
+        updateHarvestValue(input);
+      });
+      wrap.addEventListener("change", (event) => {
+        const input = event.target.closest("[data-harvest-field], [data-harvest-param]");
+        if (!input) return;
+        updateHarvestValue(input);
+        persistHarvestState();
+        renderHarvest();
+      });
+    });
+
+    els.harvestScenarioWrap.addEventListener("click", (event) => {
+      const button = event.target.closest("[data-harvest-delete]");
+      if (!button) return;
+      deleteHarvestFront(Number(button.dataset.harvestDelete));
+    });
+
+    els.moduleTabs.forEach((tab) => tab.addEventListener("click", () => changeModule(tab.dataset.module)));
+    els.addFrontBtn.addEventListener("click", () => activeModule === "harvest" ? addHarvestFront() : addFront());
     els.plantSelect.addEventListener("change", (event) => changePlant(event.target.value));
     els.saveDbBtn.addEventListener("click", saveToDatabase);
     els.refreshDbBtn.addEventListener("click", loadFromDatabase);
     els.printReportBtn.addEventListener("click", printReport);
     els.copyWhatsBtn.addEventListener("click", copyWhatsApp);
     els.resetBtn.addEventListener("click", () => {
-      if (!confirm("Restaurar a planilha padrão da Necessidade CM?")) return;
-      state = cloneState(defaultState);
-      persistState();
-      render();
-      showToast("Planilha restaurada.");
+      const label = activeModule === "harvest" ? "Cenário de Colheita" : "Necessidade CM";
+      if (!confirm(`Restaurar os dados padrão de ${label}?`)) return;
+      if (activeModule === "harvest") {
+        harvestState = cloneHarvestState(defaultHarvestState);
+        persistHarvestState();
+        renderHarvest();
+      } else {
+        state = cloneState(defaultState);
+        persistState();
+        render();
+      }
+      showToast(`${label} restaurado.`);
     });
 
     render();
+    renderHarvest();
+    updatePageChrome();
     setTimeout(() => {
-      if (ensureFirebase()) setStatus(localUpdatedAt ? `Local ${formatDateTime(localUpdatedAt)}` : "Banco pronto", "good");
+      const currentUpdatedAt = activeModule === "harvest" ? harvestLocalUpdatedAt : localUpdatedAt;
+      if (ensureFirebase()) setStatus(currentUpdatedAt ? `Local ${formatDateTime(currentUpdatedAt)}` : "Banco pronto", "good");
     }, 300);
     })();
   </script>

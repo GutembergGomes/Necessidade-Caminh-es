@@ -331,6 +331,30 @@
       font-size: 1.45rem;
     }
 
+    .summary-card.real-fleet {
+      border-color: rgba(0, 176, 240, .42);
+      background: linear-gradient(180deg, rgba(9, 57, 72, .45), rgba(13, 31, 27, .96));
+    }
+
+    .summary-card.fleet-gap {
+      border-color: rgba(250, 204, 21, .48);
+    }
+
+    .summary-card.fleet-ok {
+      border-color: rgba(34, 197, 94, .52);
+    }
+
+    .summary-input-line {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .summary-input-line .sheet-input {
+      width: 110px;
+      font-size: 1.15rem;
+    }
+
     .toast {
       position: fixed;
       right: 16px;
@@ -515,7 +539,9 @@
         meal: 60,
         availability: 1305,
         operationalMinutes: 1440,
-        fieldRoundTripDiscountPercent: 60
+        fieldRoundTripDiscountPercent: 60,
+        ownTrucksRunning: 0,
+        thirdPartyTrucksRunning: 0
       }
     };
 
@@ -648,7 +674,9 @@
           meal: parseNumber(source.params?.meal ?? defaultState.params.meal),
           availability: parseNumber(source.params?.availability ?? defaultState.params.availability),
           operationalMinutes: parseNumber(source.params?.operationalMinutes ?? defaultState.params.operationalMinutes),
-          fieldRoundTripDiscountPercent: parseNumber(source.params?.fieldRoundTripDiscountPercent ?? defaultState.params.fieldRoundTripDiscountPercent)
+          fieldRoundTripDiscountPercent: parseNumber(source.params?.fieldRoundTripDiscountPercent ?? defaultState.params.fieldRoundTripDiscountPercent),
+          ownTrucksRunning: parseNumber(source.params?.ownTrucksRunning ?? defaultState.params.ownTrucksRunning),
+          thirdPartyTrucksRunning: parseNumber(source.params?.thirdPartyTrucksRunning ?? defaultState.params.thirdPartyTrucksRunning)
         }
       };
     }
@@ -818,6 +846,11 @@
       const grossRequiredFleets = fronts.reduce((sum, row) => sum + row.frontGrossRequiredFleets, 0);
       const fieldRoundTripDiscount = fronts.reduce((sum, row) => sum + row.frontFieldRoundTripDiscount, 0);
       const requiredFleets = fronts.reduce((sum, row) => sum + row.frontRequiredFleets, 0);
+      const operationalNeed = Math.ceil(requiredFleets);
+      const ownTrucksRunning = Math.max(0, clean.params.ownTrucksRunning);
+      const thirdPartyTrucksRunning = Math.max(0, clean.params.thirdPartyTrucksRunning);
+      const totalTrucksRunning = ownTrucksRunning + thirdPartyTrucksRunning;
+      const fleetBalance = totalTrucksRunning - operationalNeed;
 
       return {
         ...clean,
@@ -840,7 +873,12 @@
         totalFieldRoundTrips,
         fieldRoundTripDiscountPercent: discountPercent,
         fieldRoundTripDiscount,
-        requiredFleets
+        requiredFleets,
+        operationalNeed,
+        ownTrucksRunning,
+        thirdPartyTrucksRunning,
+        totalTrucksRunning,
+        fleetBalance
       };
     }
 
@@ -894,6 +932,34 @@
             <small>Atualização</small>
             <strong>${localUpdatedAt ? formatDateTime(localUpdatedAt) : "Local"}</strong>
             <span>Use Salvar no banco para outros usuários receberem.</span>
+          </div>
+          <div class="summary-card real-fleet">
+            <small>Caminhões próprios rodando</small>
+            <div class="summary-input-line">
+              ${inputNumber(data.ownTrucksRunning, "ownTrucksRunning", { digits: 0 })}
+              <span>caminhões</span>
+            </div>
+            <span>Frota própria disponível na operação.</span>
+          </div>
+          <div class="summary-card real-fleet">
+            <small>Caminhões terceiros rodando</small>
+            <div class="summary-input-line">
+              ${inputNumber(data.thirdPartyTrucksRunning, "thirdPartyTrucksRunning", { digits: 0 })}
+              <span>caminhões</span>
+            </div>
+            <span>Frota contratada disponível na operação.</span>
+          </div>
+          <div class="summary-card real-fleet">
+            <small>Total real rodando</small>
+            <strong>${formatNumber(data.totalTrucksRunning)} caminhões</strong>
+            <span>${formatNumber(data.ownTrucksRunning)} próprios + ${formatNumber(data.thirdPartyTrucksRunning)} terceiros.</span>
+          </div>
+          <div class="summary-card ${data.fleetBalance >= 0 ? "fleet-ok" : "fleet-gap"}">
+            <small>${data.fleetBalance >= 0 ? "Saldo disponível" : "Necessidade complementar"}</small>
+            <strong>${formatNumber(Math.abs(data.fleetBalance))} caminhões</strong>
+            <span>${data.fleetBalance >= 0
+              ? `Frota suficiente para a necessidade de ${formatNumber(data.operationalNeed)} caminhões.`
+              : `Faltam caminhões para atender à necessidade de ${formatNumber(data.operationalNeed)}.`}</span>
           </div>
         </div>
       `;
@@ -1239,6 +1305,12 @@
         `Bate-volta em campo: ${formatNumber(data.totalFieldRoundTrips)} × ${formatNumberFixed(data.fieldRoundTripDiscountPercent, 0)}% = desconto ${formatNumberFixed(data.fieldRoundTripDiscount, 2)}`,
         `Necessidade final: ${formatNumberFixed(data.requiredFleets, 2)} caminhões`,
         `Arredondado: ${Math.ceil(data.requiredFleets)} caminhões`,
+        `Próprios rodando: ${formatNumber(data.ownTrucksRunning)} caminhões`,
+        `Terceiros rodando: ${formatNumber(data.thirdPartyTrucksRunning)} caminhões`,
+        `Total real rodando: ${formatNumber(data.totalTrucksRunning)} caminhões`,
+        data.fleetBalance >= 0
+          ? `Saldo disponível: ${formatNumber(data.fleetBalance)} caminhões`
+          : `Necessidade complementar: ${formatNumber(Math.abs(data.fleetBalance))} caminhões`,
         "",
         `Meta moagem dia: ${formatNumber(data.planTotal)} t`,
         `Raio médio: ${formatNumberFixed(data.weightedRadius, 2)} km`,
@@ -1309,6 +1381,9 @@
               <div class="kpi"><span>Meta moagem dia</span><strong>${formatNumber(data.planTotal)}</strong><small>Toneladas planejadas</small></div>
               <div class="kpi"><span>Raio médio</span><strong>${formatNumberFixed(data.weightedRadius, 2)} km</strong><small>Raio ponderado</small></div>
               <div class="kpi"><span>Peso líquido</span><strong>${formatNumberFixed(data.weightedNetWeight, 2)} tc</strong><small>Média ponderada</small></div>
+              <div class="kpi"><span>Frota própria</span><strong>${formatNumber(data.ownTrucksRunning)}</strong><small>Caminhões rodando</small></div>
+              <div class="kpi"><span>Frota terceira</span><strong>${formatNumber(data.thirdPartyTrucksRunning)}</strong><small>Caminhões rodando</small></div>
+              <div class="kpi"><span>${data.fleetBalance >= 0 ? "Saldo" : "Necessidade complementar"}</span><strong>${formatNumber(Math.abs(data.fleetBalance))}</strong><small>Total real: ${formatNumber(data.totalTrucksRunning)}</small></div>
             </section>
             <section>
               <h2>Frentes do cenário</h2>
@@ -1558,6 +1633,20 @@
         refreshOutputs();
         renderHarvest();
       });
+    });
+
+    els.summaryWrap.addEventListener("input", (event) => {
+      const input = event.target.closest("[data-param]");
+      if (!input) return;
+      updateValue(input);
+    });
+
+    els.summaryWrap.addEventListener("change", (event) => {
+      const input = event.target.closest("[data-param]");
+      if (!input) return;
+      updateValue(input);
+      persistState();
+      refreshOutputs();
     });
 
     els.scenarioWrap.addEventListener("click", (event) => {

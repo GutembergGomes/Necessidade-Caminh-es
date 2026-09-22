@@ -355,6 +355,42 @@
       font-size: 1.15rem;
     }
 
+    .fleet-fields {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 9px;
+    }
+
+    .fleet-field {
+      display: grid;
+      gap: 4px;
+    }
+
+    .fleet-field label {
+      color: var(--muted);
+      font-size: .68rem;
+      font-weight: 900;
+      text-transform: uppercase;
+    }
+
+    .fleet-field .sheet-input { width: 100%; }
+
+    .fleet-progress {
+      height: 9px;
+      overflow: hidden;
+      border-radius: 999px;
+      background: rgba(255, 255, 255, .1);
+    }
+
+    .fleet-progress span {
+      display: block;
+      height: 100%;
+      border-radius: inherit;
+      background: var(--green);
+    }
+
+    .fleet-progress.stopped span { background: var(--danger); }
+
     .toast {
       position: fixed;
       right: 16px;
@@ -541,7 +577,9 @@
         operationalMinutes: 1440,
         fieldRoundTripDiscountPercent: 60,
         ownTrucksRunning: 0,
-        thirdPartyTrucksRunning: 0
+        thirdPartyTrucksRunning: 0,
+        ownTrucksPlanned: 0,
+        thirdPartyTrucksPlanned: 0
       }
     };
 
@@ -676,7 +714,9 @@
           operationalMinutes: parseNumber(source.params?.operationalMinutes ?? defaultState.params.operationalMinutes),
           fieldRoundTripDiscountPercent: parseNumber(source.params?.fieldRoundTripDiscountPercent ?? defaultState.params.fieldRoundTripDiscountPercent),
           ownTrucksRunning: parseNumber(source.params?.ownTrucksRunning ?? defaultState.params.ownTrucksRunning),
-          thirdPartyTrucksRunning: parseNumber(source.params?.thirdPartyTrucksRunning ?? defaultState.params.thirdPartyTrucksRunning)
+          thirdPartyTrucksRunning: parseNumber(source.params?.thirdPartyTrucksRunning ?? defaultState.params.thirdPartyTrucksRunning),
+          ownTrucksPlanned: parseNumber(source.params?.ownTrucksPlanned ?? defaultState.params.ownTrucksPlanned),
+          thirdPartyTrucksPlanned: parseNumber(source.params?.thirdPartyTrucksPlanned ?? defaultState.params.thirdPartyTrucksPlanned)
         }
       };
     }
@@ -850,6 +890,12 @@
       const ownTrucksRunning = Math.max(0, clean.params.ownTrucksRunning);
       const thirdPartyTrucksRunning = Math.max(0, clean.params.thirdPartyTrucksRunning);
       const totalTrucksRunning = ownTrucksRunning + thirdPartyTrucksRunning;
+      const ownTrucksPlanned = Math.max(0, clean.params.ownTrucksPlanned);
+      const thirdPartyTrucksPlanned = Math.max(0, clean.params.thirdPartyTrucksPlanned);
+      const totalTrucksPlanned = ownTrucksPlanned + thirdPartyTrucksPlanned;
+      const totalTrucksStopped = Math.max(totalTrucksPlanned - totalTrucksRunning, 0);
+      const runningPercent = totalTrucksPlanned ? Math.min(totalTrucksRunning / totalTrucksPlanned * 100, 100) : 0;
+      const stoppedPercent = totalTrucksPlanned ? 100 - runningPercent : 0;
       const fleetBalance = totalTrucksRunning - operationalNeed;
 
       return {
@@ -878,6 +924,12 @@
         ownTrucksRunning,
         thirdPartyTrucksRunning,
         totalTrucksRunning,
+        ownTrucksPlanned,
+        thirdPartyTrucksPlanned,
+        totalTrucksPlanned,
+        totalTrucksStopped,
+        runningPercent,
+        stoppedPercent,
         fleetBalance
       };
     }
@@ -934,25 +986,37 @@
             <span>Use Salvar no banco para outros usuários receberem.</span>
           </div>
           <div class="summary-card real-fleet">
-            <small>Caminhões próprios rodando</small>
-            <div class="summary-input-line">
-              ${inputNumber(data.ownTrucksRunning, "ownTrucksRunning", { digits: 0 })}
-              <span>caminhões</span>
+            <small>Caminhões próprios</small>
+            <div class="fleet-fields">
+              <div class="fleet-field">
+                <label>Rodando</label>
+                ${inputNumber(data.ownTrucksRunning, "ownTrucksRunning", { digits: 0 })}
+              </div>
+              <div class="fleet-field">
+                <label>Previstos</label>
+                ${inputNumber(data.ownTrucksPlanned, "ownTrucksPlanned", { digits: 0 })}
+              </div>
             </div>
-            <span>Frota própria disponível na operação.</span>
+            <span>Frota própria rodando em relação ao previsto.</span>
           </div>
           <div class="summary-card real-fleet">
-            <small>Caminhões terceiros rodando</small>
-            <div class="summary-input-line">
-              ${inputNumber(data.thirdPartyTrucksRunning, "thirdPartyTrucksRunning", { digits: 0 })}
-              <span>caminhões</span>
+            <small>Caminhões terceiros</small>
+            <div class="fleet-fields">
+              <div class="fleet-field">
+                <label>Rodando</label>
+                ${inputNumber(data.thirdPartyTrucksRunning, "thirdPartyTrucksRunning", { digits: 0 })}
+              </div>
+              <div class="fleet-field">
+                <label>Previstos</label>
+                ${inputNumber(data.thirdPartyTrucksPlanned, "thirdPartyTrucksPlanned", { digits: 0 })}
+              </div>
             </div>
-            <span>Frota contratada disponível na operação.</span>
+            <span>Frota contratada rodando em relação ao previsto.</span>
           </div>
           <div class="summary-card real-fleet">
             <small>Total real rodando</small>
             <strong>${formatNumber(data.totalTrucksRunning)} caminhões</strong>
-            <span>${formatNumber(data.ownTrucksRunning)} próprios + ${formatNumber(data.thirdPartyTrucksRunning)} terceiros.</span>
+            <span>${formatNumber(data.ownTrucksRunning)} próprios + ${formatNumber(data.thirdPartyTrucksRunning)} terceiros. Previstos: ${formatNumber(data.totalTrucksPlanned)}.</span>
           </div>
           <div class="summary-card ${data.fleetBalance >= 0 ? "fleet-ok" : "fleet-gap"}">
             <small>${data.fleetBalance >= 0 ? "Saldo disponível" : "Necessidade complementar"}</small>
@@ -960,6 +1024,18 @@
             <span>${data.fleetBalance >= 0
               ? `Frota suficiente para a necessidade de ${formatNumber(data.operationalNeed)} caminhões.`
               : `Faltam caminhões para atender à necessidade de ${formatNumber(data.operationalNeed)}.`}</span>
+          </div>
+          <div class="summary-card fleet-ok">
+            <small>Frota rodando</small>
+            <strong>${formatNumberFixed(data.runningPercent, 1)}%</strong>
+            <div class="fleet-progress"><span style="width:${Math.min(data.runningPercent, 100)}%"></span></div>
+            <span>${formatNumber(data.totalTrucksRunning)} de ${formatNumber(data.totalTrucksPlanned)} caminhões previstos.</span>
+          </div>
+          <div class="summary-card fleet-gap">
+            <small>Frota parada</small>
+            <strong>${formatNumberFixed(data.stoppedPercent, 1)}%</strong>
+            <div class="fleet-progress stopped"><span style="width:${Math.min(data.stoppedPercent, 100)}%"></span></div>
+            <span>${formatNumber(data.totalTrucksStopped)} caminhões previstos não estão rodando.</span>
           </div>
         </div>
       `;
@@ -1305,9 +1381,11 @@
         `Bate-volta em campo: ${formatNumber(data.totalFieldRoundTrips)} × ${formatNumberFixed(data.fieldRoundTripDiscountPercent, 0)}% = desconto ${formatNumberFixed(data.fieldRoundTripDiscount, 2)}`,
         `Necessidade final: ${formatNumberFixed(data.requiredFleets, 2)} caminhões`,
         `Arredondado: ${Math.ceil(data.requiredFleets)} caminhões`,
-        `Próprios rodando: ${formatNumber(data.ownTrucksRunning)} caminhões`,
-        `Terceiros rodando: ${formatNumber(data.thirdPartyTrucksRunning)} caminhões`,
-        `Total real rodando: ${formatNumber(data.totalTrucksRunning)} caminhões`,
+        `Próprios: ${formatNumber(data.ownTrucksRunning)} rodando de ${formatNumber(data.ownTrucksPlanned)} previstos`,
+        `Terceiros: ${formatNumber(data.thirdPartyTrucksRunning)} rodando de ${formatNumber(data.thirdPartyTrucksPlanned)} previstos`,
+        `Total: ${formatNumber(data.totalTrucksRunning)} rodando de ${formatNumber(data.totalTrucksPlanned)} previstos`,
+        `Frota rodando: ${formatNumberFixed(data.runningPercent, 1)}%`,
+        `Frota parada: ${formatNumberFixed(data.stoppedPercent, 1)}% (${formatNumber(data.totalTrucksStopped)} caminhões)`,
         data.fleetBalance >= 0
           ? `Saldo disponível: ${formatNumber(data.fleetBalance)} caminhões`
           : `Necessidade complementar: ${formatNumber(Math.abs(data.fleetBalance))} caminhões`,
@@ -1381,9 +1459,11 @@
               <div class="kpi"><span>Meta moagem dia</span><strong>${formatNumber(data.planTotal)}</strong><small>Toneladas planejadas</small></div>
               <div class="kpi"><span>Raio médio</span><strong>${formatNumberFixed(data.weightedRadius, 2)} km</strong><small>Raio ponderado</small></div>
               <div class="kpi"><span>Peso líquido</span><strong>${formatNumberFixed(data.weightedNetWeight, 2)} tc</strong><small>Média ponderada</small></div>
-              <div class="kpi"><span>Frota própria</span><strong>${formatNumber(data.ownTrucksRunning)}</strong><small>Caminhões rodando</small></div>
-              <div class="kpi"><span>Frota terceira</span><strong>${formatNumber(data.thirdPartyTrucksRunning)}</strong><small>Caminhões rodando</small></div>
+              <div class="kpi"><span>Frota própria</span><strong>${formatNumber(data.ownTrucksRunning)} / ${formatNumber(data.ownTrucksPlanned)}</strong><small>Rodando / previstos</small></div>
+              <div class="kpi"><span>Frota terceira</span><strong>${formatNumber(data.thirdPartyTrucksRunning)} / ${formatNumber(data.thirdPartyTrucksPlanned)}</strong><small>Rodando / previstos</small></div>
               <div class="kpi"><span>${data.fleetBalance >= 0 ? "Saldo" : "Necessidade complementar"}</span><strong>${formatNumber(Math.abs(data.fleetBalance))}</strong><small>Total real: ${formatNumber(data.totalTrucksRunning)}</small></div>
+              <div class="kpi"><span>Frota rodando</span><strong>${formatNumberFixed(data.runningPercent, 1)}%</strong><small>${formatNumber(data.totalTrucksRunning)} de ${formatNumber(data.totalTrucksPlanned)}</small></div>
+              <div class="kpi"><span>Frota parada</span><strong>${formatNumberFixed(data.stoppedPercent, 1)}%</strong><small>${formatNumber(data.totalTrucksStopped)} caminhões</small></div>
             </section>
             <section>
               <h2>Frentes do cenário</h2>

@@ -706,6 +706,26 @@
       harvestLocalUpdatedAt = updatedAt;
     }
 
+    function blankHarvestFront(front = "Frente 1") {
+      return {
+        front, tch: 0, spacing: 1.5, shotLength: 0, harvestSpeed: 0,
+        availableHours: 15, maneuverTime: 1.5, harvesters: 0, tractors: 0,
+        tractorDensity: 0, loadingTime: 0, auxiliaryTime: 0, loadDensity: 0
+      };
+    }
+
+    function syncHarvestFrontsWithTransport() {
+      const current = harvestState.fronts || [];
+      const used = new Set();
+      harvestState.fronts = state.fronts.map((transportFront, index) => {
+        let sourceIndex = current.findIndex((row, rowIndex) => !used.has(rowIndex) && row.front === transportFront.front);
+        if (sourceIndex < 0 && current[index] && !used.has(index)) sourceIndex = index;
+        if (sourceIndex >= 0) used.add(sourceIndex);
+        const source = sourceIndex >= 0 ? current[sourceIndex] : blankHarvestFront(transportFront.front);
+        return { ...blankHarvestFront(transportFront.front), ...source, front: transportFront.front };
+      });
+    }
+
     function calculateHarvest(source = harvestState) {
       const clean = cloneHarvestState(source);
       const fronts = clean.fronts.map((row) => {
@@ -883,10 +903,6 @@
       return `<input class="sheet-input" type="text" inputmode="decimal" value="${escapeHtml(formatNumberFixed(value, digits))}" data-harvest-row="${index}" data-harvest-field="${escapeHtml(field)}">`;
     }
 
-    function harvestText(value, index) {
-      return `<input class="sheet-input front-input" type="text" value="${escapeHtml(value)}" data-harvest-row="${index}" data-harvest-field="front">`;
-    }
-
     function harvestKpiHtml(data) {
       return [
         ["Produção líquida", `${formatNumberFixed(data.netProductionHour, 2)} t/h`, `${formatNumberFixed(data.lossPercent, 0)}% de perda aplicada`],
@@ -934,6 +950,7 @@
     }
 
     function renderHarvest() {
+      syncHarvestFrontsWithTransport();
       const data = calculateHarvest();
       els.harvestKpiWrap.innerHTML = harvestKpiHtml(data);
       els.harvestScenarioWrap.innerHTML = `
@@ -943,12 +960,12 @@
             <th>Horas disponíveis</th><th>Tempo manobra</th><th>Colhedoras</th><th>Transbordos</th>
             <th>Densidade transbordo</th><th>Tempo carregamento</th><th>Tempo auxiliar</th><th>Carga caminhão</th>
             <th>Prod. colhedoras</th><th>Prod. transbordos</th><th>Prod. frente</th><th>Gargalo</th>
-            <th>Caminhões/h</th><th>Intervalo</th><th>Cap. agronômica/dia</th><th>Ação</th>
+            <th>Caminhões/h</th><th>Intervalo</th><th>Cap. agronômica/dia</th>
           </tr></thead>
           <tbody>
             ${data.fronts.map((row, index) => `
               <tr>
-                <td class="sheet-cell-label">${harvestText(row.front, index)}</td>
+                <td class="sheet-cell-label">${escapeHtml(row.front)}</td>
                 <td class="sheet-cell-input">${harvestInput(row.tch, "tch", index, 0)}</td>
                 <td class="sheet-cell-input">${harvestInput(row.spacing, "spacing", index, 2)}</td>
                 <td class="sheet-cell-input">${harvestInput(row.shotLength, "shotLength", index, 0)}</td>
@@ -968,7 +985,6 @@
                 <td class="sheet-cell-formula">${formatNumberFixed(row.trucksPerHour, 2)}</td>
                 <td class="sheet-cell-formula">${row.allocationInterval ? `${formatNumberFixed(row.allocationInterval, 1)} min` : "—"}</td>
                 <td class="sheet-cell-formula">${formatNumber(row.agronomicFrontProductionDay)} t/dia</td>
-                <td><button class="btn danger" type="button" data-harvest-delete="${index}">Excluir</button></td>
               </tr>
             `).join("")}
             <tr>
@@ -981,7 +997,6 @@
               <td class="sheet-cell-total">${formatNumberFixed(data.trucksPerHour, 2)}</td>
               <td></td>
               <td class="sheet-cell-total">${formatNumber(data.agronomicProductionDay)} t/dia</td>
-              <td></td>
             </tr>
           </tbody>
         </table>
@@ -999,7 +1014,7 @@
         ? "Capacidade de colheita por frente, equipamentos, parâmetros agronômicos e demanda de caminhões."
         : "Sistema por unidade para calcular, salvar e enviar a necessidade de caminhões.";
       document.title = `${isHarvest ? "Cenário de Colheita" : "Necessidade CM"} — ${plantName()}`;
-      els.addFrontBtn.textContent = isHarvest ? "Adicionar frente de colheita" : "Adicionar frente";
+      els.addFrontBtn.textContent = isHarvest ? "Gerenciar frentes no Transporte" : "Adicionar frente";
     }
 
     function render() {
@@ -1158,7 +1173,10 @@
         fieldRoundTrips: 0
       });
       persistState();
+      syncHarvestFrontsWithTransport();
+      persistHarvestState();
       render();
+      renderHarvest();
       showToast("Frente adicionada.");
     }
 
@@ -1166,7 +1184,10 @@
       if (!state.fronts[index]) return;
       state.fronts.splice(index, 1);
       persistState();
+      syncHarvestFrontsWithTransport();
+      persistHarvestState();
       render();
+      renderHarvest();
       showToast("Frente excluída.");
     }
 
@@ -1181,26 +1202,6 @@
       } else if (target.dataset.harvestParam) {
         harvestState[target.dataset.harvestParam] = parseNumber(target.value);
       }
-    }
-
-    function addHarvestFront() {
-      harvestState.fronts.push({
-        front: `Frente ${harvestState.fronts.length + 1}`,
-        tch: 0, spacing: 1.5, shotLength: 0, harvestSpeed: 0,
-        availableHours: 15, maneuverTime: 1.5, harvesters: 0, tractors: 0,
-        tractorDensity: 0, loadingTime: 0, auxiliaryTime: 0, loadDensity: 0
-      });
-      persistHarvestState();
-      renderHarvest();
-      showToast("Frente de colheita adicionada.");
-    }
-
-    function deleteHarvestFront(index) {
-      if (!harvestState.fronts[index]) return;
-      harvestState.fronts.splice(index, 1);
-      persistHarvestState();
-      renderHarvest();
-      showToast("Frente de colheita excluída.");
     }
 
     function harvestWhatsAppText(data = calculateHarvest()) {
@@ -1449,6 +1450,7 @@
 
     async function saveToDatabase() {
       persistState();
+      syncHarvestFrontsWithTransport();
       persistHarvestState();
       if (!ensureFirebase()) return;
       const now = new Date().toISOString();
@@ -1494,6 +1496,8 @@
           harvestState = cloneHarvestState(data.harvestState);
           persistHarvestState(data.harvestUpdatedAt || data.updatedAt || new Date().toISOString());
         }
+        syncHarvestFrontsWithTransport();
+        persistHarvestState(data.harvestUpdatedAt || data.updatedAt || new Date().toISOString());
         render();
         renderHarvest();
         const currentUpdatedAt = activeModule === "harvest" ? harvestLocalUpdatedAt : localUpdatedAt;
@@ -1513,6 +1517,8 @@
       localUpdatedAt = localStorage.getItem(metaKey()) || "";
       harvestState = loadHarvestState();
       harvestLocalUpdatedAt = localStorage.getItem(harvestMetaKey()) || "";
+      syncHarvestFrontsWithTransport();
+      persistHarvestState(harvestLocalUpdatedAt || new Date().toISOString());
       render();
       renderHarvest();
       const currentUpdatedAt = activeModule === "harvest" ? harvestLocalUpdatedAt : localUpdatedAt;
@@ -1524,6 +1530,7 @@
       if (!['transport', 'harvest'].includes(module) || module === activeModule) return;
       activeModule = module;
       localStorage.setItem(ACTIVE_MODULE_KEY, activeModule);
+      if (activeModule === "harvest") renderHarvest();
       updatePageChrome();
       const currentUpdatedAt = activeModule === "harvest" ? harvestLocalUpdatedAt : localUpdatedAt;
       setStatus(currentUpdatedAt ? `Local ${formatDateTime(currentUpdatedAt)}` : "Banco pronto", "good");
@@ -1542,7 +1549,10 @@
         if (!input) return;
         updateValue(input);
         persistState();
+        syncHarvestFrontsWithTransport();
+        persistHarvestState();
         refreshOutputs();
+        renderHarvest();
       });
     });
 
@@ -1567,14 +1577,8 @@
       });
     });
 
-    els.harvestScenarioWrap.addEventListener("click", (event) => {
-      const button = event.target.closest("[data-harvest-delete]");
-      if (!button) return;
-      deleteHarvestFront(Number(button.dataset.harvestDelete));
-    });
-
     els.moduleTabs.forEach((tab) => tab.addEventListener("click", () => changeModule(tab.dataset.module)));
-    els.addFrontBtn.addEventListener("click", () => activeModule === "harvest" ? addHarvestFront() : addFront());
+    els.addFrontBtn.addEventListener("click", () => activeModule === "harvest" ? changeModule("transport") : addFront());
     els.plantSelect.addEventListener("change", (event) => changePlant(event.target.value));
     els.saveDbBtn.addEventListener("click", saveToDatabase);
     els.refreshDbBtn.addEventListener("click", loadFromDatabase);

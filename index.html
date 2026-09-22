@@ -375,6 +375,19 @@
 
     .fleet-field .sheet-input { width: 100%; }
 
+    .fleet-percent-line {
+      display: flex;
+      justify-content: space-between;
+      gap: 10px;
+      padding-top: 7px;
+      border-top: 1px solid rgba(174, 221, 184, .16);
+      font-size: .78rem;
+      font-weight: 900;
+    }
+
+    .fleet-percent-line .running { color: #86efac; }
+    .fleet-percent-line .stopped { color: #fca5a5; }
+
     .fleet-progress {
       height: 9px;
       overflow: hidden;
@@ -892,6 +905,10 @@
       const totalTrucksRunning = ownTrucksRunning + thirdPartyTrucksRunning;
       const ownTrucksPlanned = Math.max(0, clean.params.ownTrucksPlanned);
       const thirdPartyTrucksPlanned = Math.max(0, clean.params.thirdPartyTrucksPlanned);
+      const ownRunningPercent = ownTrucksPlanned ? Math.min(ownTrucksRunning / ownTrucksPlanned * 100, 100) : 0;
+      const ownStoppedPercent = ownTrucksPlanned ? 100 - ownRunningPercent : 0;
+      const thirdPartyRunningPercent = thirdPartyTrucksPlanned ? Math.min(thirdPartyTrucksRunning / thirdPartyTrucksPlanned * 100, 100) : 0;
+      const thirdPartyStoppedPercent = thirdPartyTrucksPlanned ? 100 - thirdPartyRunningPercent : 0;
       const totalTrucksPlanned = ownTrucksPlanned + thirdPartyTrucksPlanned;
       const totalTrucksStopped = Math.max(totalTrucksPlanned - totalTrucksRunning, 0);
       const runningPercent = totalTrucksPlanned ? Math.min(totalTrucksRunning / totalTrucksPlanned * 100, 100) : 0;
@@ -926,6 +943,10 @@
         totalTrucksRunning,
         ownTrucksPlanned,
         thirdPartyTrucksPlanned,
+        ownRunningPercent,
+        ownStoppedPercent,
+        thirdPartyRunningPercent,
+        thirdPartyStoppedPercent,
         totalTrucksPlanned,
         totalTrucksStopped,
         runningPercent,
@@ -997,6 +1018,10 @@
                 ${inputNumber(data.ownTrucksPlanned, "ownTrucksPlanned", { digits: 0 })}
               </div>
             </div>
+            <div class="fleet-percent-line">
+              <span class="running">Rodando: ${formatNumberFixed(data.ownRunningPercent, 1)}%</span>
+              <span class="stopped">Parado: ${formatNumberFixed(data.ownStoppedPercent, 1)}%</span>
+            </div>
             <span>Frota própria rodando em relação ao previsto.</span>
           </div>
           <div class="summary-card real-fleet">
@@ -1010,6 +1035,10 @@
                 <label>Previstos</label>
                 ${inputNumber(data.thirdPartyTrucksPlanned, "thirdPartyTrucksPlanned", { digits: 0 })}
               </div>
+            </div>
+            <div class="fleet-percent-line">
+              <span class="running">Rodando: ${formatNumberFixed(data.thirdPartyRunningPercent, 1)}%</span>
+              <span class="stopped">Parado: ${formatNumberFixed(data.thirdPartyStoppedPercent, 1)}%</span>
             </div>
             <span>Frota contratada rodando em relação ao previsto.</span>
           </div>
@@ -1381,8 +1410,8 @@
         `Bate-volta em campo: ${formatNumber(data.totalFieldRoundTrips)} × ${formatNumberFixed(data.fieldRoundTripDiscountPercent, 0)}% = desconto ${formatNumberFixed(data.fieldRoundTripDiscount, 2)}`,
         `Necessidade final: ${formatNumberFixed(data.requiredFleets, 2)} caminhões`,
         `Arredondado: ${Math.ceil(data.requiredFleets)} caminhões`,
-        `Próprios: ${formatNumber(data.ownTrucksRunning)} rodando de ${formatNumber(data.ownTrucksPlanned)} previstos`,
-        `Terceiros: ${formatNumber(data.thirdPartyTrucksRunning)} rodando de ${formatNumber(data.thirdPartyTrucksPlanned)} previstos`,
+        `Próprios: ${formatNumber(data.ownTrucksRunning)} de ${formatNumber(data.ownTrucksPlanned)} | ${formatNumberFixed(data.ownRunningPercent, 1)}% rodando | ${formatNumberFixed(data.ownStoppedPercent, 1)}% parado`,
+        `Terceiros: ${formatNumber(data.thirdPartyTrucksRunning)} de ${formatNumber(data.thirdPartyTrucksPlanned)} | ${formatNumberFixed(data.thirdPartyRunningPercent, 1)}% rodando | ${formatNumberFixed(data.thirdPartyStoppedPercent, 1)}% parado`,
         `Total: ${formatNumber(data.totalTrucksRunning)} rodando de ${formatNumber(data.totalTrucksPlanned)} previstos`,
         `Frota rodando: ${formatNumberFixed(data.runningPercent, 1)}%`,
         `Frota parada: ${formatNumberFixed(data.stoppedPercent, 1)}% (${formatNumber(data.totalTrucksStopped)} caminhões)`,

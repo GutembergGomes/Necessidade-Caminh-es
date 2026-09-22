@@ -1465,12 +1465,16 @@
           harvestUpdatedAt: now,
           harvestState: cloneHarvestState(harvestState)
         });
+        const harvestConfirmation = await rootRef().child("harvestState").get();
+        if (!harvestConfirmation.exists()) {
+          throw new Error("O banco não confirmou o salvamento do Cenário de Colheita.");
+        }
         persistState(now);
         persistHarvestState(now);
         setStatus(`Salvo ${formatDateTime(now)}`, "good");
         render();
         renderHarvest();
-        showToast(`${activeModule === "harvest" ? "Cenário de Colheita" : "Necessidade CM"} salvo no banco.`);
+        showToast(`${activeModule === "harvest" ? "Cenário de Colheita" : "Transporte e Colheita"} salvo e confirmado no banco.`);
       } catch (error) {
         setStatus("Falha ao salvar", "bad");
         showToast(`Não foi possível salvar no banco: ${error.message || error}`);
